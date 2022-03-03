@@ -16,3 +16,4 @@ scipy==1.7.0
 seaborn==0.11.1
 tensorboardX==2.4.1
 tornado==6.1
+autograd
