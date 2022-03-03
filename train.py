@@ -43,6 +43,9 @@ def train(model, args, learn_rate, batch_size, data):
   t0 = time.time()  # logging the time
   results = {'train_loss':[], 'test_loss':[], 'test_acc':[], 'global_step':0}  # Logging the results
 
+  # initialise infinity loss first
+  best_test_loss = float('inf')
+
   for step in range(args.total_steps):  # training loop 
 
     x, t, dx = [get_batch(data[k], step, args, batch_size) for k in ['x', 't', 'dx']]
@@ -65,5 +68,12 @@ def train(model, args, learn_rate, batch_size, data):
       print('step {}, dt {:.3f}, train_loss {:.2e}, test_loss {:.2e}'
             .format(step, time.time()-t0, loss.item(), test_loss)) #.item() is just the integer of PyTorch scalar. 
       t0 = time.time()
+
+    if args.satellite_case and args.save_weights and step % args.print_every == 0:
+      if test_loss < best_test_loss:
+        path = '{}/{}-satellite-orbits-{}-step={}.tar'.format(args.save_dir, args.name, args.label, step)
+        torch.save(model.state_dict(), path)
+        best_test_loss = test_loss
+
   model = model.cpu()
   return results

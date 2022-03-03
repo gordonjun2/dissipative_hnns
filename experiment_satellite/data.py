@@ -318,7 +318,7 @@ def sgp4_generated_orbits(data_percentage_usage, exp_dir, verbose=False, **kwarg
         print("Retrieving the dataset of LEO SGP4 orbits ... \n")
         
     data_root_dir = exp_dir + '/Data_matlab/'
-    raw = loadmat(os.path.join(data_root_dir, 'data_GT_cell_200_ts.mat'))
+    raw = loadmat(os.path.join(data_root_dir, 'data_GT_cell_100_ts.mat'))
     
     raw_data = raw['data_GT_cell'][0]
     indexes = torch.randperm(raw_data.shape[0])[:math.floor(raw_data.shape[0]*data_percentage_usage)]
