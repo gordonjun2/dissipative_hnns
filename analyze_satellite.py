@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 from dissipative_hnns.models import MLP, DHNN, HNN, DHNN_sat, HNN_sat, MLP_sat
 from dissipative_hnns.train import train, get_args
-from dissipative_hnns.experiment_satellite.data import get_dataset, hamiltonian_fn
+from dissipative_hnns.experiment_satellite.data import get_dataset, hamiltonian_fn, coords2state_sgp4
 from dissipative_hnns.experiment_satellite.data import potential_energy_over_M_sat, kinetic_energy_over_M_sat, total_energy_over_M_sat
 
 import random
@@ -37,7 +37,7 @@ def print_stats(results):
 def integrate_model(model, t_span, y0, **kwargs):
     
     def fun(t, np_x):
-        x = torch.tensor( np_x, requires_grad=True, dtype=torch.float32).view(1,6)
+        x = torch.tensor( np_x, requires_grad=True, dtype=torch.float32).view(1,12)
         t = torch.zeros_like(x[...,:1])
         dx = model(x, t=t).data.numpy().reshape(-1)
         return dx
@@ -68,13 +68,16 @@ satellite_problem = True
 data_percentage_usage = 1
 mode = 'DHNN'
 train_all = False
-train = False
+train_flag = True
 
 args = get_args()
 # args.batch_size = 150
-args.total_steps = 50000
+
+# If data_percentage_usage == 1 and data_GT_cell_100_ts.mat is used, total no. of satellites' states is 2,826,612.
+args.total_steps = 23000000
 #args.learning_rate = 5e-5
-args.test_every = 5000
+args.test_every = 100000
+args.print_every = args.test_every
 
 args.verbose = True
 args.gpu_enable = True
@@ -107,7 +110,7 @@ hidden_dim_test = 512
 #learn_rate_list = [5e-5]
 #batch_size_list = [128]
 
-if train == True:
+if train_flag == True:
     for hidden_dim in hidden_dim_list:
         for learn_rate in learn_rate_list:
             for batch_size in batch_size_list:
@@ -152,7 +155,8 @@ if train == True:
 else:
     model = load_model(args, hidden_dim_test, mode)
 
-    x = data[1]['x_test'] 
+    x = data[1]['x_test']
+    print(x[0])
     # Each line of 'x' is in the form (qx1, qx2, qy1, qy2, px1, px2, py1, py2) in original 2-body experiment and (qx1, qx2, qy1, qy2, qz1, qz2, px1, px2, py1, py2, pz1, pz2) in the satellite-problem experiment
     TE = data[1]['energy_test']
     KE = data[1]['ke_test']
@@ -178,7 +182,7 @@ else:
     fig = plt.figure(figsize=[20,8], dpi=100)
     ax = plt.subplot(1,2,1, projection='3d')
 
-    ax.plot3D(trajectory_states[:, 0], trajectory_states[:, 1], trajectory_states[:, 2], 'blue', label='Satellite trajectory')
+    ax.plot3D(trajectory_states[:, 0], trajectory_states[:, 2], trajectory_states[:, 4], 'blue', label='Satellite trajectory')
     ax.scatter3D(0, 0, 0, 'green', label='Point Earth')
     ax.set_title('Ground Truth Trajectory', fontsize=20)
     ax.set_xlabel('X (Normalised)', fontsize=15)
@@ -204,7 +208,7 @@ else:
     x0 = x[trajectory_start]
 
     trajectory_states_GT = trajectory_states
-    true_x = trajectory_states_GT[:, :3]
+    true_x = trajectory_states_GT[:, :6]
 
     t_eval = np.linspace(t_span[0], t_span[1], trajectory_end - trajectory_start)
 
@@ -230,12 +234,12 @@ else:
     fig = plt.figure(figsize=[20,8], dpi=100)
 
     ax = plt.subplot(1,3,1, projection='3d')
-    ax.plot3D(true_x[:, 0], true_x[:, 1], true_x[:, 2], 'k', label='Ground truth trajectory')
+    ax.plot3D(true_x[:, 0], true_x[:, 2], true_x[:, 4], 'k', label='Ground truth trajectory')
     # ax.plot3D(mlp_x[:, 0], mlp_x[:, 1], mlp_x[:, 2], 'r', label='Predicted (baseline) trajectory')
     # ax.plot3D(hnn_x[:, 0], hnn_x[:, 1], hnn_x[:, 2], 'g', label='Predicted (HNN) trajectory')
     # ax.plot3D(dhnn_x[:, 0], dhnn_x[:, 1], dhnn_x[:, 2], 'b', label='Predicted (D-HNN) trajectory')
     label = 'Predicted (' + mode + ') trajectory' 
-    ax.plot3D(model_x[:, 0], model_x[:, 1], model_x[:, 2], 'b', label=label)
+    ax.plot3D(model_x[:, 0], model_x[:, 2], model_x[:, 4], 'b', label=label)
     ax.scatter3D(0, 0, 0, 'green', label='Point Earth')
     ax.set_title('Trajectories', fontsize=20)
     ax.set_xlabel('X (Normalised)', fontsize=15)
@@ -261,7 +265,12 @@ else:
     KE_cal_list = []
 
     for point in model_x:
-        twobody_points = np.stack((point, np.array([0, 0, 0, 0, 0, 0])))
+        #twobody_points = np.stack((point, np.array([0, 0, 0, 0, 0, 0])))
+        #TE_cal_list.append(total_energy_over_M_sat(twobody_points)[0])
+        #PE_cal_list.append(potential_energy_over_M_sat(twobody_points))
+        #KE_cal_list.append(kinetic_energy_over_M_sat(twobody_points))
+        #twobody_points = np.stack((point, np.array([0, 0, 0, 0, 0, 0])))
+        twobody_points = coords2state_sgp4(point)
         TE_cal_list.append(total_energy_over_M_sat(twobody_points)[0])
         PE_cal_list.append(potential_energy_over_M_sat(twobody_points))
         KE_cal_list.append(kinetic_energy_over_M_sat(twobody_points))
@@ -291,7 +300,7 @@ else:
     # ax.plot(t_eval, ((true_x[:, :3]-mlp_x[:, :3])**2).mean(-1), 'r-', label='MLP', linewidth=2)
     # ax.plot(t_eval, ((true_x[:, :3]-hnn_x[:, :3])**2).mean(-1), 'g-', label='HNN', linewidth=2)
     # ax.plot(t_eval, ((true_x[:, :3]-dhnn_x[:, :3])**2).mean(-1), 'b-', label='D-HNN', linewidth=2)
-    ax.plot(t_eval, ((true_x[:, :3]-model_x[:, :3])**2).mean(-1), 'b-', label=mode, linewidth=2)
+    ax.plot(t_eval, ((true_x[:, [0, 2, 4]]-model_x[:, [0, 2, 4]])**2).mean(-1), 'b-', label=mode, linewidth=2)
     ax.legend(fontsize=7)
 
     # plt.subplot(1,3,3)

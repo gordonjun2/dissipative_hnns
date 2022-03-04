@@ -255,7 +255,8 @@ def coords2state_sgp4(coords):
     pz1 = coords[10]
     pz2 = coords[11]
     
-    state = torch.tensor([[0, qx1, qy1, qz1, px1, py1, pz1], [1, qx2, qy2, qz2, px2, py2, pz2]])
+    #state = torch.tensor([[0, qx1, qy1, qz1, px1, py1, pz1], [1, qx2, qy2, qz2, px2, py2, pz2]])
+    state = torch.tensor([[qx1, qy1, qz1, px1, py1, pz1], [qx2, qy2, qz2, px2, py2, pz2]])
     
     return state
 
@@ -338,12 +339,14 @@ def sgp4_generated_orbits(data_percentage_usage, exp_dir, verbose=False, **kwarg
     earth_state = np.zeros((1, 6))
     
     trajectory_count = 0
+    state_count = 0
 
     for trajectory in raw_data:
         trajectory_count = trajectory_count + 1
         print('Processing trajectory no. ' + str(trajectory_count) + '/' + str(raw_data.shape[0]))
         first_state_flag = 1
         for satellite_state in trajectory:
+            state_count = state_count + 1
             if first_state_flag == 1:
                 xyz_pos.append(satellite_state[0:3])
                 xyz_vel.append(satellite_state[3:6])
@@ -359,28 +362,43 @@ def sgp4_generated_orbits(data_percentage_usage, exp_dir, verbose=False, **kwarg
                 orbit = np.concatenate((orbit, state))
 
         orbits.append(orbit.reshape(-1, orbit.shape[1] * orbit.shape[2]))
-        
-    max_abs_pos = max(abs(np.array(xyz_pos).flatten()))
-    max_abs_vel = max(abs(np.array(xyz_vel).flatten()))
+    
+    print("Total no. of satellites' states: ", state_count)
+
+    # max_abs_pos = max(abs(np.array(xyz_pos).flatten()))
+    # max_abs_vel = max(abs(np.array(xyz_vel).flatten()))
+
+    max_pos = max(np.array(xyz_pos).flatten())
+    min_pos = min(np.array(xyz_pos).flatten())
+    max_vel = max(np.array(xyz_vel).flatten())
+    min_vel = min(np.array(xyz_vel).flatten())
     
     for orbit in orbits:
         timesteps_lengths.append(orbit.shape[0])
         for state in orbit:
             state = state.reshape(-1,6)
+            pos_state_arr = state[0, 0:3]
+            vel_state_arr = state[0, 3:6]
+            # norm_pos_state_arr = pos_state_arr / max_abs_pos
+            # norm_vel_state_arr = vel_state_arr / max_abs_vel
+
+            norm_pos_state_arr = 2 * ((pos_state_arr - min_pos) / (max_pos - min_pos)) - 1
+            norm_vel_state_arr = 2 * ((vel_state_arr - min_vel) / (max_vel - min_vel)) - 1
             
-            pos_state_arr = state[:, 0:3]
-            vel_state_arr = state[:, 3:6]
-            norm_pos_state_arr = pos_state_arr / max_abs_pos
-            norm_vel_state_arr = vel_state_arr / max_abs_vel
-            
-            norm_state = np.concatenate((norm_pos_state_arr, norm_vel_state_arr), axis=1)
+            norm_state = np.concatenate((norm_pos_state_arr, norm_vel_state_arr))
+            norm_state = np.concatenate((np.array([norm_state]), np.array([[0, 0, 0, 0, 0, 0]])), axis=0)
             
             # Calculate instantaneous velocity and acceleration
             norm_dstate = update_satellite(None, norm_state)
 
+            # reshape from [nbodies, state] where state=[m, qx, qy, qz, px, py, pz]
+            # to [canonical_coords] = [qx1, qx2, qy1, qy2, qz1, qz2, px1, px2,....]
+            norm_state = norm_state.reshape(2,6).T[:].flatten()
+            norm_dstate = norm_dstate.reshape(2,6).T[:].flatten()
+
             # Save state in both non-canonical and canonical states
-            norm_x.append(norm_state[0, :])
-            norm_dx.append(norm_dstate[:6])
+            norm_x.append(norm_state)
+            norm_dx.append(norm_dstate)
 
             t_list.append(0.)
             
@@ -410,8 +428,10 @@ def sgp4_generated_orbits(data_percentage_usage, exp_dir, verbose=False, **kwarg
                 'ke': norm_KE_list,
                 'pe': norm_PE_list,
                 'lengths': timesteps_lengths,
-                'max_abs_pos': max_abs_pos,
-                'max_abs_vel': max_abs_vel}
+                'max_pos': max_pos,
+                'min_pos': min_pos,
+                'max_vel': max_vel,
+                'min_vel': min_vel}
     
     return data, aux_data
 
@@ -456,7 +476,7 @@ def make_orbits_dataset(satellite_problem, data_percentage_usage, exp_dir, test_
         for k, v in aux_data.items():
             if k == 'lengths':
                 split_data[k], split_data[k + '_test'] = v[test_lengths_num:], v[:test_lengths_num]
-            elif k != 'max_abs_pos' and k != 'max_abs_vel':
+            elif k != 'max_pos' and k != 'min_pos' and k != 'max_vel' and k != 'min_vel':
                 split_data[k], split_data[k + '_test'] = v[test_sample_end:], v[:test_sample_end]
                 # Each 'k' is a key in 'data'
 
